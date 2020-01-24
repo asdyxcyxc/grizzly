@@ -37,6 +37,7 @@ class Interesting(object):
         self.target = target  # a Puppet to run with
         self.status = status  # ReduceStatus to track progress
         self.server = None  # a server to serve with
+        self.server_map = sapphire.ServerMap()  # manage dynamic requests, includes and redirects
         self.orig_sig = None  # signature to reduce to (if specified)
         # alt_crash_cb (if set) will be called with args=(temp_prefix) for any crashes which do
         # not match the original signature (assuming --any-crash is not set)
@@ -304,6 +305,7 @@ class Interesting(object):
             sapphire.Sapphire.CLOSE_CLIENT_ERROR = 2
             self.server = sapphire.Sapphire()
 
+
             if not self.no_harness:
                 harness = os.path.join(os.path.dirname(__file__), '..', 'common', 'harness.html')
                 with open(harness, 'rb') as harness_fp:
@@ -312,9 +314,9 @@ class Interesting(object):
                 def _dyn_resp_close():
                     self.target.close()
                     return b"<h1>Close Browser</h1>"
-                self.server.add_dynamic_response("/close_browser", _dyn_resp_close, mime_type="text/html")
-                self.server.add_dynamic_response("/harness", lambda: harness, mime_type="text/html")
-                self.server.set_redirect("/first_test", str(self.landing_page), required=True)
+                self.server_map.set_dynamic_response("/close_browser", _dyn_resp_close, mime_type="text/html")
+                self.server_map.set_dynamic_response("/harness", lambda: harness, mime_type="text/html")
+                self.server_map.set_redirect("/first_test", str(self.landing_page), required=True)
 
         if self.no_harness:
             self.server.timeout = self.iter_timeout
@@ -351,12 +353,13 @@ class Interesting(object):
                 return self.target.monitor.is_healthy() and not idle_timeout_event.is_set()
 
             if not self.no_harness:
-                self.server.set_redirect("/next_test", str(self.landing_page), required=True)
+                self.server_map.set_redirect("/next_test", str(self.landing_page), required=True)
 
             # serve the testcase
             server_status, files_served = self.server.serve_testcase(testcase,
                                                                      continue_cb=keep_waiting,
-                                                                     forever=self.no_harness)
+                                                                     forever=self.no_harness,
+                                                                     server_map=self.server_map)
 
             # attempt to detect a failure
             failure_detected = self.target.detect_failure(
